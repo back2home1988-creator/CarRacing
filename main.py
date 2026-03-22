@@ -1,130 +1,130 @@
-import pygame
+from ursina import *
 import random
-import sys
+import os
 
-# Constants
-WIDTH = 400
-HEIGHT = 600
-FPS = 60
+# Global app variable
+app = None
 
-# Colors
-WHITE = (255, 255, 255)
-BLACK = (0, 0, 0)
-RED = (255, 0, 0)
-GREEN = (0, 255, 0)
-BLUE = (0, 0, 255)
-GRAY = (100, 100, 100)
+def setup_game():
+    global app
+    if app is None:
+        if not os.environ.get('DISPLAY'):
+            app = Ursina(window_type='none')
+        else:
+            app = Ursina()
 
-class Player(pygame.sprite.Sprite):
-    def __init__(self):
-        super().__init__()
-        self.image = pygame.Surface((50, 80))
-        self.image.fill(BLUE)
-        self.rect = self.image.get_rect()
-        self.rect.centerx = WIDTH // 2
-        self.rect.bottom = HEIGHT - 20
-        self.speed = 5
+    # Camera setup for realistic 3D racing perspective
+    camera.position = (0, 7, -25)
+    camera.rotation_x = 10
 
-    def update(self):
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_LEFT]:
-            self.rect.x -= self.speed
-        if keys[pygame.K_RIGHT]:
-            self.rect.x += self.speed
+    # Environment
+    try:
+        sky = Sky()
+    except:
+        sky = Entity(model='sphere', scale=500, color=color.azure, double_sided=True)
 
-        # Keep player on screen
-        if self.rect.left < 0:
-            self.rect.left = 0
-        if self.rect.right > WIDTH:
-            self.rect.right = WIDTH
+    # Road with a texture
+    road = Entity(model='cube', scale=(10, 0.5, 200), color=color.dark_gray, texture='white_cube', position=(0,0,50))
 
-class Obstacle(pygame.sprite.Sprite):
-    def __init__(self, speed):
-        super().__init__()
-        self.image = pygame.Surface((50, 80))
-        self.image.fill(RED)
-        self.rect = self.image.get_rect()
-        self.reset_pos()
-        self.speed = speed
+    # Player Car with a more realistic color and texture
+    player = Entity(model='cube', color=color.red, scale=(2, 0.8, 4.5), position=(0, 0.4, -10), collider='box', texture='brick')
 
-    def reset_pos(self):
-        self.rect.x = random.randrange(WIDTH - self.rect.width)
-        self.rect.y = random.randrange(-300, -100)
+    obstacles = []
 
-    def update(self):
-        self.rect.y += self.speed
+    try:
+        score_text = Text(text='Score: 0', position=(-0.85, 0.45), scale=2, color=color.white)
+        game_over_text = Text(text='GAME OVER\nPress R to Restart', position=(0, 0.1), origin=(0,0), scale=3, color=color.red, enabled=False)
+    except:
+        score_text = None
+        game_over_text = None
 
-def draw_text(surf, text, size, x, y):
-    font = pygame.font.SysFont('Arial', size)
-    text_surface = font.render(text, True, WHITE)
-    text_rect = text_surface.get_rect()
-    text_rect.midtop = (x, y)
-    surf.blit(text_surface, text_rect)
+    state = {
+        'score': 0,
+        'game_over': False,
+        'player': player,
+        'obstacles': obstacles,
+        'score_text': score_text,
+        'game_over_text': game_over_text,
+        'road': road,
+        'spawn_task': None
+    }
 
-def main():
-    pygame.init()
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("Car Racing Game")
-    clock = pygame.time.Clock()
+    def spawn_obstacle():
+        # Only spawn if not game over
+        if not state['game_over']:
+            # Use random models or textures for variety
+            obs = Entity(model='cube', color=color.random_color(), scale=(2, 1, 4), position=(random.uniform(-4, 4), 0.5, 100), collider='box', texture='white_cube')
+            state['obstacles'].append(obs)
+            # Re-invoke to continue spawning
+            state['spawn_task'] = invoke(spawn_obstacle, delay=random.uniform(1, 2.5))
 
-    while True: # Main Game Loop
-        all_sprites = pygame.sprite.Group()
-        obstacles = pygame.sprite.Group()
-        player = Player()
-        all_sprites.add(player)
+    def update():
+        if state['game_over']:
+            if held_keys['r']:
+                restart_game()
+            return
 
-        obstacle_speed = 5
-        for i in range(3):
-            obs = Obstacle(obstacle_speed)
-            all_sprites.add(obs)
-            obstacles.add(obs)
+        # Simulate movement by scrolling road texture
+        speed_val = 1.0 + (state['score'] / 50.0) # Gradually increase speed
+        state['road'].texture_offset += (0, speed_val * time.dt)
 
-        score = 0
-        game_running = True
+        # Player movement
+        move_speed = 10
+        if held_keys['a'] or held_keys['left arrow']:
+            state['player'].x -= move_speed * time.dt
+        if held_keys['d'] or held_keys['right arrow']:
+            state['player'].x += move_speed * time.dt
 
-        # Game session
-        while game_running:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
+        # Boundary
+        if state['player'].x < -4: state['player'].x = -4
+        if state['player'].x > 4: state['player'].x = 4
 
-            all_sprites.update()
-
-            # Check for avoided obstacles to increase score
-            for obs in obstacles:
-                if obs.rect.top > HEIGHT:
-                    score += 1
-                    obs.reset_pos()
-                    # Increase speed slightly over time
-                    obs.speed += 0.1
+        # Move obstacles towards player
+        for obs in state['obstacles'][:]:
+            obs.z -= (50 + state['score']) * time.dt # Speed up with score
 
             # Collision detection
-            if pygame.sprite.spritecollide(player, obstacles, False):
-                game_running = False
+            if state['player'].intersects(obs).hit:
+                state['game_over'] = True
+                if state['game_over_text']:
+                    state['game_over_text'].enabled = True
 
-            screen.fill(GRAY)
-            all_sprites.draw(screen)
-            draw_text(screen, f"Score: {score}", 32, WIDTH // 2, 10)
+            # Score and remove obstacles
+            if obs.z < -20:
+                state['score'] += 1
+                if state['score_text']:
+                    state['score_text'].text = f'Score: {state["score"]}'
+                state['obstacles'].remove(obs)
+                destroy(obs)
 
-            pygame.display.flip()
-            clock.tick(FPS)
+    def restart_game():
+        state['score'] = 0
+        if state['score_text']:
+            state['score_text'].text = 'Score: 0'
+        state['game_over'] = False
+        if state['game_over_text']:
+            state['game_over_text'].enabled = False
+        state['player'].x = 0
+        for obs in state['obstacles']:
+            destroy(obs)
+        state['obstacles'].clear()
 
-        # Game Over Screen
-        screen.fill(BLACK)
-        draw_text(screen, "GAME OVER", 64, WIDTH // 2, HEIGHT // 4)
-        draw_text(screen, f"Score: {score}", 32, WIDTH // 2, HEIGHT // 2)
-        draw_text(screen, "Press any key to restart", 24, WIDTH // 2, HEIGHT * 3 / 4)
-        pygame.display.flip()
+        # Cancel any pending spawn and start fresh
+        if state['spawn_task']:
+            try:
+                state['spawn_task'].enabled = False
+            except:
+                pass
+        spawn_obstacle()
 
-        waiting = True
-        while waiting:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
-                if event.type == pygame.KEYDOWN:
-                    waiting = False
+    # Start first spawn
+    spawn_obstacle()
+
+    controller = Entity()
+    controller.update = update
+
+    return app
 
 if __name__ == "__main__":
-    main()
+    app = setup_game()
+    app.run()

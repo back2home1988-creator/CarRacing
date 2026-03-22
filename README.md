@@ -1,6 +1,6 @@
-# CarRacing
+# 3D CarRacing
 
-A simple car racing game built with Python and Pygame.
+A realistic 3D car racing game built with Python and the Ursina engine.
 
 ## How to Play
 
@@ -15,9 +15,11 @@ A simple car racing game built with Python and Pygame.
 
 ## Controls
 
-- **Left Arrow**: Move car left
-- **Right Arrow**: Move car right
+- **A / Left Arrow**: Move car left
+- **D / Right Arrow**: Move car right
+- **W / Up Arrow**: Increase speed (optional)
+- **S / Down Arrow**: Decrease speed (optional)
 
 ## Goal
 
-Avoid the oncoming obstacles and score as many points as possible!
+Avoid the oncoming 3D obstacles and score as many points as possible!
